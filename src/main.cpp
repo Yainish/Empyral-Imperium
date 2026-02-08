@@ -1,0 +1,666 @@
+#include "raylib.h"
+#include <fstream>
+#include <string>
+#include <vector>
+#include <math.h>
+#include <algorithm>
+#include <iostream>
+#include "../external/json.hpp"
+
+bool DEBUG_MODE = false;
+
+const std::string RESOURCE_PATH = "./resources/";
+
+const int tileSize = 32;
+
+const int GAME_WIDTH  = 1280;
+const int GAME_HEIGHT = 720;
+
+using json = nlohmann::json;
+
+json loadJson(const std::string& path) {
+    std::ifstream f(path);
+    json j;
+    f >> j;
+    return j;
+}
+
+struct Drawable {
+    Rectangle src;
+    Rectangle dst;
+    Texture2D* texture;
+    float sortY;
+
+    int x, y;
+    std::string layer;
+};
+
+struct Player {
+    //Player Pos
+    float x, y;
+    Rectangle body;
+    Texture2D texture;
+    float spriteW;
+    float spriteH;
+    const float PLAYER_MARGIN = 1.0f;
+
+    int frame = 0;
+    //int frameCount = 4;
+    float frameTimer = 0.0f;
+    
+    int direction = 0; //0 DOWN, 1 UP, 2 RIGHT, 3 LEFT              //10 8 11 9
+
+    float speed = 150.0f;
+
+    int backupKey = 0;
+    int lastKey = 0;
+
+    Player() {
+        Image image = LoadImage((RESOURCE_PATH + "character-spritesheet.png").c_str());
+        texture = LoadTextureFromImage(image);
+        UnloadImage(image);
+
+        //Start pos
+        x = tileSize*14;
+        y = tileSize*14;
+
+        spriteW = (float)texture.width / 13;
+        spriteH = (float)texture.height / 54;            // 3 DIRECTIONS
+
+        updatePlayerBody();
+    }
+
+    ~Player() {
+        UnloadTexture(texture);
+    }
+
+    void updatePlayerBody() {
+        //Regular body
+        //body = Rectangle{x + PLAYER_MARGIN, y + PLAYER_MARGIN, tileSize - PLAYER_MARGIN * 2, tileSize - PLAYER_MARGIN * 2};
+
+        //Feet collision
+        body = Rectangle{x + 22.0f, y + 25.0f, 20.0f, 8.0f};
+    }
+
+    void updatePlayerAnimation(float frameTime, float dx, float dy, int lastKey) {
+        if (dx == 0 && dy == 0) {
+            frame = 0;
+            frameTimer = 0;
+            return;
+        }
+        
+        if (IsKeyUp(lastKey))
+            switch (lastKey) { 
+                case KEY_DOWN:  //264
+                case KEY_UP:    //265
+                    direction = (dx > 0) ? 11 : 9;
+                    break;
+                case KEY_RIGHT: //262
+                case KEY_LEFT:  //263
+                    direction = (dy > 0) ? 10 : 8;
+                    break;
+            }
+        else
+            switch (lastKey) { 
+                case KEY_DOWN:  //264
+                    direction = 10;
+                    break;
+                case KEY_UP:    //265
+                    direction = 8;
+                    break;
+                case KEY_RIGHT: //262
+                    direction = 11;
+                    break;
+                case KEY_LEFT:  //263
+                    direction = 9;
+                    break;
+            }
+
+        frameTimer += frameTime;
+
+        if (frameTimer >= 0.10f) {
+            frameTimer -= 0.10f;
+            frame = (frame + 1) % 9;
+        }
+    }
+};
+
+struct TileAnimationFrame {
+    int tileId;
+    int duration;
+};
+
+struct Tileset {
+    Texture2D texture;
+    int firstGid;
+    int tileWidth;
+    int tileHeight;
+    int columns;
+
+    std::map<int, std::vector<TileAnimationFrame>> animations;
+};
+
+struct TileLayer {
+    std::string name;
+    std::vector<int> data;
+    int width;
+    int height;
+};
+
+struct WorldObject {
+    int x, y;           // Careful not to input floats in the editor
+    int endX, endY, startX, startY;
+    std::string layer;
+};
+
+struct Map {
+    std::vector<TileLayer> layers;
+    std::vector<Tileset> tilesets;
+    std::vector<std::vector<int>> collisions;
+    std::vector<Drawable> staticDrawables;
+    std::vector<Drawable> dynamicDrawables;
+    std::vector<WorldObject> worldObjects;
+    int height, width = 0;
+
+    std::vector<Rectangle> debugColliders;
+
+    Map() { }
+
+    ~Map() {
+        for (Tileset& ts : tilesets)
+            UnloadTexture(ts.texture);
+    }
+
+    void loadMap(const std::string& filename) {
+        loadFromTMJ(RESOURCE_PATH + filename + ".tmj");
+        loadCollisions((RESOURCE_PATH + filename + "_collisions.csv").c_str());
+        loadStaticDrawables();
+    }
+
+    void loadFromTMJ(const std::string& filename) {
+        layers.clear();
+        tilesets.clear();
+        worldObjects.clear();
+
+        json j = loadJson(filename);
+
+        // Load tilesets
+        for (json forTileset : j["tilesets"]) {
+            json jsonTileset;
+            // .tsj
+            std::string imgPath;
+            if (forTileset.contains("source")) {
+                std::string tsjRelative = forTileset["source"];
+                std::string tsjPath = RESOURCE_PATH + tsjRelative;
+                jsonTileset = loadJson(tsjPath);
+                std::string tsjFolder = tsjRelative.substr(0, tsjRelative.find_last_of("/\\") + 1);
+                imgPath = RESOURCE_PATH + tsjFolder + jsonTileset["image"].get<std::string>();
+            }
+            // .png
+            else {
+                jsonTileset = forTileset;
+                imgPath = RESOURCE_PATH + jsonTileset["image"].get<std::string>();
+            }
+                
+            Texture2D tex = LoadTexture(imgPath.c_str());
+            SetTextureFilter(tex, TEXTURE_FILTER_POINT);
+
+            Tileset tileset;
+            tileset.texture = tex;
+            tileset.firstGid   = forTileset["firstgid"].get<int>();
+            tileset.tileWidth  = jsonTileset["tilewidth"].get<int>();
+            tileset.tileHeight = jsonTileset["tileheight"].get<int>();
+            tileset.columns    = jsonTileset["columns"].get<int>();
+
+            // Animations
+            if (jsonTileset.contains("tiles")) {
+                for (json tile : jsonTileset["tiles"]) {
+                    if (!tile.contains("animation")) continue;
+
+                    int tileId = tile["id"].get<int>();
+
+                    for (json frame : tile["animation"]) {
+                        tileset.animations[tileId].push_back({
+                            frame["tileid"].get<int>(),
+                            frame["duration"].get<int>()
+                        });
+                    }
+                }
+            }
+
+            tilesets.push_back(tileset);
+        }
+
+        // Load layers
+        for (json layer : j["layers"]) {
+            if (layer["type"] == "tilelayer") {
+                if (layer["name"] == "Collisions") continue;        //Ignore collisions, they are parsed separately
+
+                TileLayer tlayer;
+                tlayer.name   = layer["name"].get<std::string>();
+                tlayer.width  = layer["width"].get<int>();
+                tlayer.height = layer["height"].get<int>();
+                tlayer.data   = layer["data"].get<std::vector<int>>();
+
+                layers.push_back(tlayer);
+            }
+            else if (layer["type"] == "objectgroup") {
+                for (json obj : layer["objects"]) {
+                    if (!obj.contains("properties")) continue;
+                    WorldObject wo;
+                    for (json property : obj["properties"]) {
+                        if (property["name"] == "endX")
+                            wo.endX = property["value"].get<int>();
+                        else if (property["name"] == "endY")
+                            wo.endY = property["value"].get<int>();
+                        else if (property["name"] == "layer")
+                            wo.layer = property["value"].get<std::string>();
+                        else if (property["name"] == "startX")
+                            wo.startX = property["value"].get<int>();
+                        else if (property["name"] == "startY")
+                            wo.startY = property["value"].get<int>();
+                    }
+                    wo.x = obj["x"].get<int>() / 16;
+                    wo.y = obj["y"].get<int>() / 16;
+                    worldObjects.push_back(wo);
+                }
+            }
+        }
+
+        if (!layers.empty()) {
+            width = layers[0].width;
+            height = layers[0].height;
+        }
+    }
+
+    void loadCollisions(const char* filename) {
+        collisions.clear();
+
+        std::ifstream file(filename);
+        std::string line;
+
+        while (std::getline(file, line)) {
+            std::vector<int> row;
+            std::string cell;
+
+            for (char c : line) {
+                if (c == ',') {
+                    row.push_back(std::stoi(cell));
+                    cell.clear();
+                    continue;
+                } 
+                cell += c;
+            }
+            row.push_back(std::stoi(cell));
+            collisions.push_back(row);
+        }
+    }
+
+    void loadStaticDrawables() {
+        staticDrawables.clear();
+        for (TileLayer& layer : layers) {
+            if (layer.name != "Tile Layer 4") continue;
+
+            for (int y = 0; y < layer.height; y++) {
+                for (int x = 0; x < layer.width; x++) {
+                    int gid = layer.data[y * layer.width + x];
+
+                    if (gid <= 0) continue;
+
+                    Tileset* ts = findTileset(gid);
+                    if (!ts) continue;
+
+                    int localId = gid - ts->firstGid;
+
+                    Rectangle src = {
+                        (float)((localId % ts->columns) * ts->tileWidth),
+                        (float)((localId / ts->columns) * ts->tileHeight),
+                        (float)ts->tileWidth,
+                        (float)ts->tileHeight
+                    };
+
+                    Rectangle dst = {
+                        (float)(x * tileSize),
+                        (float)(y * tileSize),
+                        (float)tileSize,
+                        (float)tileSize
+                    };
+
+                    Drawable d;
+                    d.texture = &ts->texture;
+                    d.src = src;
+                    d.dst = dst;
+                    d.sortY = dst.y + dst.height;
+
+                    d.x = x;
+                    d.y = y;
+                    d.layer = "Tile Layer 4";
+                    staticDrawables.push_back(d);
+                }
+            }
+        }
+
+        // Update sortY to match object anchor
+        for (WorldObject wo : worldObjects) {
+            int anchor = -1;
+            for (Drawable& dr : staticDrawables) {
+                if ((dr.x == wo.x) && (dr.y == wo.y) && (dr.layer == wo.layer)) {
+                    anchor = dr.sortY;
+                    break;
+                }
+            }
+            if (anchor == -1) continue;
+            for (int x = wo.startX+wo.x; x < wo.endX+wo.x+1; x++)
+                for (int y = wo.startY+wo.y; y < wo.endY+wo.y+1; y++)
+                    for (Drawable& dr : staticDrawables) {
+                        if ((dr.x == x) && (dr.y == y) && (dr.layer == wo.layer)) {
+                            dr.sortY = anchor;
+                            break;
+                        }
+                    }
+        }
+    }
+
+    int collisionValue(int tx, int ty) {
+        if (tx < 0 || ty < 0 || ty >= height || tx >= width)
+            return true; // Outside the map
+        return collisions[ty][tx];
+    }
+
+    Rectangle getTileCollider(int tx, int ty, int col) {
+        //0 DOWN, 1 UP, 2 RIGHT, 3 LEFT
+
+        if (col < 32*1) {
+            return Rectangle{
+                tx * tileSize + 0.0f,
+                ty * tileSize + col + 0.0f,
+                tileSize,
+                tileSize
+            };
+        }
+        else if (col < 32*2) {
+            col = col % 32;
+            return Rectangle{
+                tx * tileSize + 0.0f,
+                ty * tileSize - col + 0.0f,
+                tileSize,
+                tileSize
+            };
+        }
+        else if (col < 32*3) {
+            col = col % 32;
+            return Rectangle{
+                tx * tileSize + col + 0.0f,
+                ty * tileSize + 0.0f,
+                tileSize,
+                tileSize
+            };
+        }
+        else if (col < 32*4) {
+            col = col % 32;
+            return Rectangle{
+                tx * tileSize - col + 0.0f,
+                ty * tileSize + 0.0f,
+                tileSize,
+                tileSize
+            };
+        }
+        else return Rectangle {};       // Error, should never happen
+    }
+
+    bool checkMapCollision(Rectangle& playerBody) {
+        int left   = (int)floor(playerBody.x / tileSize - 1.0f);
+        int right  = (int)floor((playerBody.x + playerBody.width) / tileSize + 1.0f);
+        int top    = (int)floor(playerBody.y / tileSize - 1.0f);
+        int bottom = (int)floor((playerBody.y + playerBody.height) / tileSize + 1.0f);
+
+        for (int y = top; y <= bottom; y++) {
+            for (int x = left; x <= right; x++) {
+                
+                int col = collisionValue(x, y);
+                if (col == -1)
+                    continue;
+
+                Rectangle tileCol = getTileCollider(x, y, col);
+                if (DEBUG_MODE) debugColliders.push_back(tileCol);      //DEBUG
+
+                if (CheckCollisionRecs(playerBody, tileCol))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    Tileset* findTileset(int gid) {
+        for (int i = tilesets.size() - 1; i >= 0; --i) {
+            if (gid >= tilesets[i].firstGid)
+                return &tilesets[i];
+        }
+        return nullptr;
+    }
+
+    void drawMap(bool altitude) {               // True for normal layers, false for topmost layers
+        for (TileLayer& layer : layers) {
+            if (altitude && layer.name == "Tile Layer 5") continue;
+            if (!altitude && layer.name != "Tile Layer 5") continue;
+
+            for (int y = 0; y < layer.height; y++) {
+                for (int x = 0; x < layer.width; x++) {
+                    int gid = layer.data[y * layer.width + x];
+
+                    if (gid <= 0) continue;
+
+                    Tileset* ts = findTileset(gid);
+                    if (!ts) continue;
+
+                    int localId = gid - ts->firstGid;
+
+                    auto it = ts->animations.find(localId);
+                    if (it != ts->animations.end()) {
+                        std::vector<TileAnimationFrame> anim = it->second;
+
+                        int totalTime = 0;
+                        for (TileAnimationFrame f : anim) totalTime += f.duration;
+
+                        int t = (int)(GetTime() * 1000) % totalTime;
+
+                        int acc = 0;
+                        for (TileAnimationFrame f : anim) {
+                            acc += f.duration;
+                            if (t < acc) {
+                                localId = f.tileId;
+                                break;
+                            }
+                        }
+                    }
+
+                    Rectangle src = {
+                        (float)((localId % ts->columns) * ts->tileWidth),
+                        (float)((localId / ts->columns) * ts->tileHeight),
+                        (float)ts->tileWidth,
+                        (float)ts->tileHeight
+                    };
+
+                    Rectangle dst = {
+                        (float)(x * tileSize),
+                        (float)(y * tileSize),
+                        (float)tileSize,
+                        (float)tileSize
+                    };
+
+                    DrawTexturePro(ts->texture, src, dst, {0,0}, 0, WHITE);
+                }
+            }
+        }
+    }
+};
+
+Camera2D setupCamera(Player &player) {
+    Camera2D camera = {0};
+    camera.target = { player.x + tileSize/2.0f, player.y + tileSize/2.0f };
+    camera.offset = { GAME_WIDTH/2.0f, GAME_HEIGHT/2.0f };
+    camera.rotation = 0.0f;
+    camera.zoom = 1.0f;
+    return camera;
+}
+
+void initialize() {
+    //Game Window
+    InitWindow(0, 0, "Top Down");
+    ToggleBorderlessWindowed();
+    ClearWindowState(FLAG_WINDOW_TOPMOST);
+    SetTargetFPS(60);
+    HideCursor();
+}
+
+void input(Player &player, Map &map) {
+    float dt = GetFrameTime();
+
+    float dx = 0;
+    float dy = 0;
+
+    if (IsKeyDown(KEY_RIGHT)) dx += player.speed * dt;
+    if (IsKeyDown(KEY_LEFT))  dx -= player.speed * dt;
+    if (IsKeyDown(KEY_UP))    dy -= player.speed * dt;
+    if (IsKeyDown(KEY_DOWN))  dy += player.speed * dt;
+
+    player.backupKey = GetKeyPressed();
+    if (player.backupKey != 0)
+        player.lastKey = player.backupKey;
+
+    if (IsKeyPressed(KEY_F1)) DEBUG_MODE = !DEBUG_MODE;
+
+    player.updatePlayerBody();
+
+    if (dx != 0.0f) {
+        Rectangle playerCopy = player.body;
+        playerCopy.x += dx;
+
+        if (!map.checkMapCollision(playerCopy))
+            player.x += dx;
+    }
+
+    player.updatePlayerBody();
+
+    if (dy != 0.0f) {
+        Rectangle playerCopy = player.body;
+        playerCopy.y += dy;
+
+        if (!map.checkMapCollision(playerCopy))
+            player.y += dy;
+    }
+
+    player.updatePlayerBody();
+    player.updatePlayerAnimation(GetFrameTime(), dx, dy, player.lastKey);
+
+}
+
+int main(void)
+{
+    //Initialize
+    initialize();
+
+    //Texture Renderer (screen scaling)
+    RenderTexture2D target = LoadRenderTexture(GAME_WIDTH, GAME_HEIGHT);
+
+    Player player = Player();
+    Camera2D camera = setupCamera(player);
+
+    Map map = Map();
+    map.loadMap("mapa_dungeon");
+
+    camera.target.x = floor(camera.target.x);
+    camera.target.y = floor(camera.target.y);
+
+    Drawable playerDraw;
+    playerDraw.texture = &player.texture;
+
+    TileLayer r;
+    for (TileLayer l : map.layers)
+        if (l.name == "Tile Layer 4")
+            r = l;
+
+    while (!WindowShouldClose())
+    {
+        //Input
+        input(player, map);
+
+        //Camera update
+        camera.target = { floor(player.x + tileSize/2.0f), floor(player.y + tileSize/2.0f) };       //Floored to avoid visual bugs, player must also be floored
+
+        //Draw
+        BeginTextureMode(target);
+
+        ClearBackground(BLUE);
+
+        BeginMode2D(camera);
+        
+        TileLayer above;
+
+        // Draw map
+        map.drawMap(true);
+
+        // Draw player and other drawables
+        map.dynamicDrawables.clear();
+
+        Rectangle src = { player.frame * player.spriteW, 
+                        player.direction * player.spriteH, 
+                        player.spriteW, 
+                        player.spriteH };
+
+        Rectangle dst = { floor(player.x), 
+                        floor(player.y) - (player.spriteH - tileSize), 
+                        player.spriteW, 
+                        player.spriteH };         //Floored to avoid visual bugs, cam must also be floored
+
+        playerDraw.src = src;
+        playerDraw.dst = dst;
+        playerDraw.sortY = player.body.y + player.body.height;
+
+        map.dynamicDrawables.push_back(playerDraw);
+
+        std::vector<Drawable*> drawables;
+        drawables.reserve(map.staticDrawables.size() + map.dynamicDrawables.size());
+
+        for (Drawable& d : map.staticDrawables)
+            drawables.push_back(&d);
+
+        for (Drawable& d : map.dynamicDrawables)
+            drawables.push_back(&d);
+
+        std::sort(drawables.begin(), drawables.end(),
+            [](Drawable* a, Drawable* b) {
+                return a->sortY < b->sortY;
+            }
+        );
+
+        for (Drawable* d : drawables) {
+            DrawTexturePro(*d->texture, d->src, d->dst, {0,0}, 0, WHITE);
+        }
+
+        drawables.clear();
+
+        // Draw topmost layer
+        map.drawMap(false);
+
+        if (DEBUG_MODE) {
+            DrawRectangleLinesEx(player.body, 1, GREEN);
+            for (Rectangle& r : map.debugColliders) DrawRectangleLinesEx(r, 1, RED);
+            map.debugColliders.clear();
+        }
+        
+        EndMode2D();
+        EndTextureMode();
+        
+        BeginDrawing();
+
+        DrawTexturePro(target.texture, Rectangle{ 0, 0, (float)target.texture.width, -(float)target.texture.height }, 
+        Rectangle{ 0, 0, (float)GetScreenWidth(), (float)GetScreenHeight() }, Vector2{0,0}, 0, WHITE ); 
+
+        EndDrawing();
+    }
+
+    CloseWindow();
+
+    return 0;
+}

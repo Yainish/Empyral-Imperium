@@ -1,0 +1,13 @@
+CXX = g++
+CXXFLAGS = -Wall -O2 -std=c++17 -Iexternal/raylib/linux
+LDFLAGS = external/raylib/linux/libraylib.a \
+          -lm -lpthread -ldl -lX11
+
+SRC = src/main.cpp
+OUT = game
+
+$(OUT):
+	$(CXX) $(SRC) -o $(OUT) $(CXXFLAGS) $(LDFLAGS)
+
+clean:
+	rm -f $(OUT)
