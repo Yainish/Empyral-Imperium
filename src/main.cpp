@@ -11,6 +11,11 @@ bool DEBUG_MODE = false;
 
 const std::string RESOURCE_PATH = "./resources/";
 
+const std::string LAYER_ALWAYSABOVE = "AlwaysAbove";
+const std::string LAYER_DRAWABLES = "Drawables";
+const std::string LAYER_WORLDOBJECTS = "WorldObjects";
+const std::string LAYER_TRANSITIONS = "Transitions";
+
 const int tileSize = 32;
 
 const int GAME_WIDTH  = 1280;
@@ -153,6 +158,12 @@ struct WorldObject {
     std::string layer;
 };
 
+struct Transition {
+    Rectangle trigger;
+    int spawnX, spawnY;
+    std::string map;
+};
+
 struct Map {
     std::vector<TileLayer> layers;
     std::vector<Tileset> tilesets;
@@ -160,6 +171,7 @@ struct Map {
     std::vector<Drawable> staticDrawables;
     std::vector<Drawable> dynamicDrawables;
     std::vector<WorldObject> worldObjects;
+    std::vector<Transition> transitions;
     int height, width = 0;
 
     std::vector<Rectangle> debugColliders;
@@ -181,6 +193,7 @@ struct Map {
         layers.clear();
         tilesets.clear();
         worldObjects.clear();
+        transitions.clear();
 
         json j = loadJson(filename);
 
@@ -245,24 +258,49 @@ struct Map {
                 layers.push_back(tlayer);
             }
             else if (layer["type"] == "objectgroup") {
-                for (json obj : layer["objects"]) {
-                    if (!obj.contains("properties")) continue;
-                    WorldObject wo;
-                    for (json property : obj["properties"]) {
-                        if (property["name"] == "endX")
-                            wo.endX = property["value"].get<int>();
-                        else if (property["name"] == "endY")
-                            wo.endY = property["value"].get<int>();
-                        else if (property["name"] == "layer")
-                            wo.layer = property["value"].get<std::string>();
-                        else if (property["name"] == "startX")
-                            wo.startX = property["value"].get<int>();
-                        else if (property["name"] == "startY")
-                            wo.startY = property["value"].get<int>();
+
+                if (layer["name"] == LAYER_WORLDOBJECTS) {
+                    for (json obj : layer["objects"]) {
+                        if (!obj.contains("properties")) continue;
+                        WorldObject wo;
+                        for (json property : obj["properties"]) {
+                            if (property["name"] == "endX")
+                                wo.endX = property["value"].get<int>();
+                            else if (property["name"] == "endY")
+                                wo.endY = property["value"].get<int>();
+                            else if (property["name"] == "layer")
+                                wo.layer = property["value"].get<std::string>();
+                            else if (property["name"] == "startX")
+                                wo.startX = property["value"].get<int>();
+                            else if (property["name"] == "startY")
+                                wo.startY = property["value"].get<int>();
+                        }
+                        wo.x = obj["x"].get<int>() / 16;
+                        wo.y = obj["y"].get<int>() / 16;
+                        worldObjects.push_back(wo);
                     }
-                    wo.x = obj["x"].get<int>() / 16;
-                    wo.y = obj["y"].get<int>() / 16;
-                    worldObjects.push_back(wo);
+                }
+
+                else if (layer["name"] == LAYER_TRANSITIONS) {
+                    for (json obj : layer["objects"]) {
+                        if (!obj.contains("properties")) continue;
+                        Transition t;
+                        for (json property : obj["properties"]) {
+                            if (property["name"] == "map")
+                                t.map = property["value"].get<std::string>();
+                            else if (property["name"] == "spawnX")
+                                t.spawnX = property["value"].get<int>();
+                            else if (property["name"] == "spawnY")
+                                t.spawnY = property["value"].get<int>();
+                        }
+                        t.trigger = {
+                            obj["x"].get<float>() * 2.0f,           // Go from 16px tiles to 32px tiles
+                            obj["y"].get<float>() * 2.0f,
+                            obj["width"].get<float>() * 2.0f,
+                            obj["height"].get<float>() * 2.0f
+                        };
+                        transitions.push_back(t);
+                    }
                 }
             }
         }
@@ -299,7 +337,7 @@ struct Map {
     void loadStaticDrawables() {
         staticDrawables.clear();
         for (TileLayer& layer : layers) {
-            if (layer.name != "Tile Layer 4") continue;
+            if (layer.name != LAYER_DRAWABLES) continue;
 
             for (int y = 0; y < layer.height; y++) {
                 for (int x = 0; x < layer.width; x++) {
@@ -334,7 +372,7 @@ struct Map {
 
                     d.x = x;
                     d.y = y;
-                    d.layer = "Tile Layer 4";
+                    d.layer = LAYER_DRAWABLES;
                     staticDrawables.push_back(d);
                 }
             }
@@ -441,8 +479,8 @@ struct Map {
 
     void drawMap(bool altitude) {               // True for normal layers, false for topmost layers
         for (TileLayer& layer : layers) {
-            if (altitude && layer.name == "Tile Layer 5") continue;
-            if (!altitude && layer.name != "Tile Layer 5") continue;
+            if (altitude && layer.name == LAYER_ALWAYSABOVE) continue;
+            if (!altitude && layer.name != LAYER_ALWAYSABOVE) continue;
 
             for (int y = 0; y < layer.height; y++) {
                 for (int x = 0; x < layer.width; x++) {
@@ -553,6 +591,17 @@ void input(Player &player, Map &map) {
     player.updatePlayerBody();
     player.updatePlayerAnimation(GetFrameTime(), dx, dy, player.lastKey);
 
+    for (Transition& t : map.transitions) {
+        if (CheckCollisionRecs(player.body, t.trigger)) {
+            map.loadMap(t.map);
+
+            player.x = t.spawnX * tileSize;
+            player.y = t.spawnY * tileSize;
+            player.updatePlayerBody();
+
+            break;
+        }
+    }
 }
 
 int main(void)
@@ -574,11 +623,6 @@ int main(void)
 
     Drawable playerDraw;
     playerDraw.texture = &player.texture;
-
-    TileLayer r;
-    for (TileLayer l : map.layers)
-        if (l.name == "Tile Layer 4")
-            r = l;
 
     while (!WindowShouldClose())
     {
@@ -647,6 +691,9 @@ int main(void)
             DrawRectangleLinesEx(player.body, 1, GREEN);
             for (Rectangle& r : map.debugColliders) DrawRectangleLinesEx(r, 1, RED);
             map.debugColliders.clear();
+
+            for (Transition& t : map.transitions)
+                DrawRectangleLinesEx(t.trigger, 1, YELLOW);
         }
         
         EndMode2D();

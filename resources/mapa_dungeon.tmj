@@ -35,7 +35,7 @@
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 462, 463, 463, 463, 463, 464, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
          "height":30,
          "id":1,
-         "name":"Tile Layer 1",
+         "name":"Ground 1",
          "opacity":1,
          "type":"tilelayer",
          "visible":true,
@@ -76,7 +76,7 @@
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
          "height":30,
          "id":2,
-         "name":"Tile Layer 2",
+         "name":"Ground 2",
          "opacity":1,
          "type":"tilelayer",
          "visible":true,
@@ -117,7 +117,7 @@
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
          "height":30,
          "id":4,
-         "name":"Tile Layer 3",
+         "name":"Details",
          "opacity":1,
          "type":"tilelayer",
          "visible":true,
@@ -158,10 +158,10 @@
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
          "height":30,
          "id":5,
-         "name":"Tile Layer 4",
+         "name":"Drawables",
          "opacity":1,
          "type":"tilelayer",
-         "visible":false,
+         "visible":true,
          "width":30,
          "x":0,
          "y":0
@@ -199,7 +199,7 @@
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
          "height":30,
          "id":7,
-         "name":"Tile Layer 5",
+         "name":"AlwaysAbove",
          "opacity":1,
          "type":"tilelayer",
          "visible":true,
@@ -210,7 +210,7 @@
         {
          "draworder":"topdown",
          "id":8,
-         "name":"Object Layer 1",
+         "name":"WorldObjects",
          "objects":[
                 {
                  "height":6.125,
@@ -230,7 +230,7 @@
                         {
                          "name":"layer",
                          "type":"string",
-                         "value":"Tile Layer 4"
+                         "value":"Drawables"
                         }, 
                         {
                          "name":"startX",
@@ -248,6 +248,44 @@
                  "width":6.875,
                  "x":240,
                  "y":400
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":9,
+         "name":"Transitions",
+         "objects":[
+                {
+                 "height":5.75,
+                 "id":13,
+                 "name":"",
+                 "properties":[
+                        {
+                         "name":"map",
+                         "type":"string",
+                         "value":"mapa_dungeon_2"
+                        }, 
+                        {
+                         "name":"spawnX",
+                         "type":"int",
+                         "value":3
+                        }, 
+                        {
+                         "name":"spawnY",
+                         "type":"int",
+                         "value":7
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":17.125,
+                 "x":232.125,
+                 "y":197.375
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -296,8 +334,8 @@
          "x":0,
          "y":0
         }],
- "nextlayerid":9,
- "nextobjectid":10,
+ "nextlayerid":10,
+ "nextobjectid":14,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="30" height="30" tilewidth="16" tileheight="16" infinite="0" nextlayerid="9" nextobjectid="10">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="30" height="30" tilewidth="16" tileheight="16" infinite="0" nextlayerid="10" nextobjectid="14">
  <editorsettings>
   <export target="mapa_dungeon.tmj" format="json"/>
  </editorsettings>
@@ -25,7 +25,7 @@
  <tileset firstgid="2106" name="collisions" tilewidth="16" tileheight="16" tilecount="128" columns="32">
   <image source="tilesets/collisions.png" width="512" height="64"/>
  </tileset>
- <layer id="1" name="Tile Layer 1" width="30" height="30">
+ <layer id="1" name="Ground 1" width="30" height="30">
   <data encoding="csv">
 0,0,0,0,0,0,0,0,0,0,0,1,2,2,2,2,2,2,3,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,27,28,28,28,28,28,28,29,0,0,0,0,0,0,0,0,0,0,0,
@@ -59,7 +59,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,462,463,463,463,463,464,0,0,0,0,0,0,0,0,0,0,0,0
 </data>
  </layer>
- <layer id="2" name="Tile Layer 2" width="30" height="30">
+ <layer id="2" name="Ground 2" width="30" height="30">
   <data encoding="csv">
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -93,7 +93,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 </data>
  </layer>
- <layer id="4" name="Tile Layer 3" width="30" height="30">
+ <layer id="4" name="Details" width="30" height="30">
   <data encoding="csv">
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -127,7 +127,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 </data>
  </layer>
- <layer id="5" name="Tile Layer 4" width="30" height="30" visible="0">
+ <layer id="5" name="Drawables" width="30" height="30">
   <data encoding="csv">
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -161,7 +161,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 </data>
  </layer>
- <layer id="7" name="Tile Layer 5" width="30" height="30">
+ <layer id="7" name="AlwaysAbove" width="30" height="30">
   <data encoding="csv">
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -195,14 +195,23 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 </data>
  </layer>
- <objectgroup id="8" name="Object Layer 1">
+ <objectgroup id="8" name="WorldObjects">
   <object id="8" x="240" y="400" width="6.875" height="6.125">
    <properties>
     <property name="endX" type="int" value="1"/>
     <property name="endY" type="int" value="0"/>
-    <property name="layer" value="Tile Layer 4"/>
+    <property name="layer" value="Drawables"/>
     <property name="startX" type="int" value="-1"/>
     <property name="startY" type="int" value="-1"/>
+   </properties>
+  </object>
+ </objectgroup>
+ <objectgroup id="9" name="Transitions">
+  <object id="13" x="232.125" y="197.375" width="17.125" height="5.75">
+   <properties>
+    <property name="map" value="mapa_dungeon_2"/>
+    <property name="spawnX" type="int" value="3"/>
+    <property name="spawnY" type="int" value="7"/>
    </properties>
   </object>
  </objectgroup>
