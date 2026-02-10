@@ -15,6 +15,7 @@ const std::string LAYER_ALWAYSABOVE = "AlwaysAbove";
 const std::string LAYER_DRAWABLES = "Drawables";
 const std::string LAYER_WORLDOBJECTS = "WorldObjects";
 const std::string LAYER_TRANSITIONS = "Transitions";
+const std::string LAYER_SPAWNPOINTS = "SpawnPoints";
 
 const int tileSize = 32;
 
@@ -40,6 +41,11 @@ struct Drawable {
     std::string layer;
 };
 
+struct Transition {
+    Rectangle trigger;
+    std::string map, spawnName;
+};
+
 struct Player {
     //Player Pos
     float x, y;
@@ -60,14 +66,15 @@ struct Player {
     int backupKey = 0;
     int lastKey = 0;
 
+    bool inTransition = false;
+    bool fading = false;
+    float fadeAlpha = 0.0f;
+    Transition* pendingTransition = nullptr;
+
     Player() {
         Image image = LoadImage((RESOURCE_PATH + "character-spritesheet.png").c_str());
         texture = LoadTextureFromImage(image);
         UnloadImage(image);
-
-        //Start pos
-        x = tileSize*14;
-        y = tileSize*14;
 
         spriteW = (float)texture.width / 13;
         spriteH = (float)texture.height / 54;            // 3 DIRECTIONS
@@ -158,10 +165,9 @@ struct WorldObject {
     std::string layer;
 };
 
-struct Transition {
-    Rectangle trigger;
-    int spawnX, spawnY;
-    std::string map;
+struct SpawnPoint {
+    std::string who, name;
+    float x, y;
 };
 
 struct Map {
@@ -172,6 +178,9 @@ struct Map {
     std::vector<Drawable> dynamicDrawables;
     std::vector<WorldObject> worldObjects;
     std::vector<Transition> transitions;
+    std::vector<SpawnPoint> spawnPoints;
+
+    std::string playerSpawn;
     int height, width = 0;
 
     std::vector<Rectangle> debugColliders;
@@ -183,7 +192,8 @@ struct Map {
             UnloadTexture(ts.texture);
     }
 
-    void loadMap(const std::string& filename) {
+    void loadMap(const std::string& filename, const std::string& spawn) {
+        playerSpawn = spawn;
         loadFromTMJ(RESOURCE_PATH + filename + ".tmj");
         loadCollisions((RESOURCE_PATH + filename + "_collisions.csv").c_str());
         loadStaticDrawables();
@@ -194,6 +204,7 @@ struct Map {
         tilesets.clear();
         worldObjects.clear();
         transitions.clear();
+        spawnPoints.clear();
 
         json j = loadJson(filename);
 
@@ -288,10 +299,8 @@ struct Map {
                         for (json property : obj["properties"]) {
                             if (property["name"] == "map")
                                 t.map = property["value"].get<std::string>();
-                            else if (property["name"] == "spawnX")
-                                t.spawnX = property["value"].get<int>();
-                            else if (property["name"] == "spawnY")
-                                t.spawnY = property["value"].get<int>();
+                            else if (property["name"] == "spawnName")
+                                t.spawnName = property["value"].get<std::string>();
                         }
                         t.trigger = {
                             obj["x"].get<float>() * 2.0f,           // Go from 16px tiles to 32px tiles
@@ -300,6 +309,22 @@ struct Map {
                             obj["height"].get<float>() * 2.0f
                         };
                         transitions.push_back(t);
+                    }
+                }
+
+                else if (layer["name"] == LAYER_SPAWNPOINTS) {
+                    for (json obj : layer["objects"]) {
+                        if (!obj.contains("properties")) continue;
+                        SpawnPoint sp;
+                        for (json property : obj["properties"]) {
+                            if (property["name"] == "who")
+                                sp.who = property["value"].get<std::string>();
+                            else if (property["name"] == "name")
+                                sp.name = property["value"].get<std::string>();
+                        }
+                        sp.x = obj["x"].get<float>() * 2.0f;
+                        sp.y = obj["y"].get<float>() * 2.0f;
+                        spawnPoints.push_back(sp);
                     }
                 }
             }
@@ -568,6 +593,8 @@ void input(Player &player, Map &map) {
 
     if (IsKeyPressed(KEY_F1)) DEBUG_MODE = !DEBUG_MODE;
 
+    if (player.inTransition) return;        // Block controls while in transition
+
     player.updatePlayerBody();
 
     if (dx != 0.0f) {
@@ -593,12 +620,9 @@ void input(Player &player, Map &map) {
 
     for (Transition& t : map.transitions) {
         if (CheckCollisionRecs(player.body, t.trigger)) {
-            map.loadMap(t.map);
-
-            player.x = t.spawnX * tileSize;
-            player.y = t.spawnY * tileSize;
-            player.updatePlayerBody();
-
+            player.inTransition = true;
+            player.fading = true;
+            player.pendingTransition = &t;
             break;
         }
     }
@@ -616,7 +640,13 @@ int main(void)
     Camera2D camera = setupCamera(player);
 
     Map map = Map();
-    map.loadMap("mapa_dungeon");
+    map.loadMap("mapa_dungeon", "player_1");
+    for (SpawnPoint& s : map.spawnPoints) {
+        if (s.name == map.playerSpawn) {
+            player.x = s.x;
+            player.y = s.y;
+        }
+    }
 
     camera.target.x = floor(camera.target.x);
     camera.target.y = floor(camera.target.y);
@@ -628,6 +658,33 @@ int main(void)
     {
         //Input
         input(player, map);
+
+        if (player.inTransition) {
+            if (player.fading) {
+                player.fadeAlpha += 1 * GetFrameTime();
+                if (player.fadeAlpha >= 1.0f) {
+                    player.fadeAlpha = 1.0f;
+
+                    map.loadMap(player.pendingTransition->map, player.pendingTransition->spawnName);
+                    for (SpawnPoint& s : map.spawnPoints) {
+                        if (s.name == map.playerSpawn) {
+                            player.x = s.x;
+                            player.y = s.y;
+                        }
+                    }
+                    player.updatePlayerBody();
+
+                    player.fading = false;
+                }
+            } else {
+                player.fadeAlpha -= 1 * GetFrameTime();
+                if (player.fadeAlpha <= 0.0f) {
+                    player.fadeAlpha = 0.0f;
+                    player.inTransition = false;
+                    player.pendingTransition = nullptr;
+                }
+            }
+        }
 
         //Camera update
         camera.target = { floor(player.x + tileSize/2.0f), floor(player.y + tileSize/2.0f) };       //Floored to avoid visual bugs, player must also be floored
@@ -694,6 +751,16 @@ int main(void)
 
             for (Transition& t : map.transitions)
                 DrawRectangleLinesEx(t.trigger, 1, YELLOW);
+        }
+
+        // Draw fades
+        if (player.fadeAlpha > 0.0f) {
+            DrawRectangle(
+                0, 0,
+                GetScreenWidth(),
+                GetScreenHeight(),
+                Fade(BLACK, player.fadeAlpha)
+            );
         }
         
         EndMode2D();
