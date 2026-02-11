@@ -374,16 +374,6 @@
                          "name":"spawnName",
                          "type":"string",
                          "value":"player_1"
-                        }, 
-                        {
-                         "name":"spawnX",
-                         "type":"int",
-                         "value":3
-                        }, 
-                        {
-                         "name":"spawnY",
-                         "type":"int",
-                         "value":7
                         }],
                  "rotation":0,
                  "type":"",
@@ -404,7 +394,7 @@
          "name":"SpawnPoints",
          "objects":[
                 {
-                 "height":9.81818181818176,
+                 "height":9.81818,
                  "id":14,
                  "name":"",
                  "properties":[
@@ -416,14 +406,42 @@
                         {
                          "name":"who",
                          "type":"string",
-                         "value":"Player"
+                         "value":"player"
                         }],
                  "rotation":0,
                  "type":"",
                  "visible":true,
-                 "width":11.6363636363636,
-                 "x":547.090909090909,
-                 "y":595.454545454545
+                 "width":11.6364,
+                 "x":547.091,
+                 "y":595.455
+                }],
+         "opacity":1,
+         "type":"objectgroup",
+         "visible":true,
+         "x":0,
+         "y":0
+        }, 
+        {
+         "draworder":"topdown",
+         "id":11,
+         "name":"Dialogues",
+         "objects":[
+                {
+                 "height":16.25,
+                 "id":16,
+                 "name":"",
+                 "properties":[
+                        {
+                         "name":"src",
+                         "type":"string",
+                         "value":"dialogue_1"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":24.5,
+                 "x":507.75,
+                 "y":526
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -492,8 +510,8 @@
          "x":0,
          "y":0
         }],
- "nextlayerid":11,
- "nextobjectid":16,
+ "nextlayerid":12,
+ "nextobjectid":18,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",

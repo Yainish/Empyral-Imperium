@@ -1,0 +1,18 @@
+{
+    "dialogues" : 
+    [
+        {
+            "name" : "dialogue_1",
+            "sentences" : [
+                {
+                    "speaker" : "Player",
+                    "msg" : "Hellooooooooooooooooooooo"
+                },
+                {
+                    "speaker" : "Wall",
+                    "msg" : "Oh, hellooooooooooooooooooooooooooo"
+                }
+            ]
+        }
+    ]
+}

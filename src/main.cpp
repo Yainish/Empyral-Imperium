@@ -16,11 +16,18 @@ const std::string LAYER_DRAWABLES = "Drawables";
 const std::string LAYER_WORLDOBJECTS = "WorldObjects";
 const std::string LAYER_TRANSITIONS = "Transitions";
 const std::string LAYER_SPAWNPOINTS = "SpawnPoints";
+const std::string LAYER_DIALOGUES = "Dialogues";
 
 const int tileSize = 32;
 
 const int GAME_WIDTH  = 1280;
 const int GAME_HEIGHT = 720;
+
+enum GameState {
+    NORMAL, TRANSITION, DIALOGUE
+};
+
+GameState gameState = NORMAL;
 
 using json = nlohmann::json;
 
@@ -46,6 +53,11 @@ struct Transition {
     std::string map, spawnName;
 };
 
+struct Dialogue {
+    std::string name;
+    std::vector<std::string> speaker, msg;
+};
+
 struct Player {
     //Player Pos
     float x, y;
@@ -66,10 +78,17 @@ struct Player {
     int backupKey = 0;
     int lastKey = 0;
 
-    bool inTransition = false;
     bool fading = false;
     float fadeAlpha = 0.0f;
     Transition* pendingTransition = nullptr;
+    
+    Dialogue* currentDialogue = nullptr;
+    int dialogueIndex = 0;
+    int visibleChars = 0;
+    float textTimer = 0.0f;
+    float textSpeed = 0.03f;
+    bool lineFinished = false;
+
 
     Player() {
         Image image = LoadImage((RESOURCE_PATH + "character-spritesheet.png").c_str());
@@ -170,6 +189,11 @@ struct SpawnPoint {
     float x, y;
 };
 
+struct DialoguePoint {
+    Rectangle trigger;
+    std::string src;
+};
+
 struct Map {
     std::vector<TileLayer> layers;
     std::vector<Tileset> tilesets;
@@ -179,8 +203,11 @@ struct Map {
     std::vector<WorldObject> worldObjects;
     std::vector<Transition> transitions;
     std::vector<SpawnPoint> spawnPoints;
+    std::vector<DialoguePoint> dialoguePoints;
+    std::vector<Dialogue> dialogues;
 
-    std::string playerSpawn;
+    std::string playerSpawnName;
+    SpawnPoint playerSpawn;
     int height, width = 0;
 
     std::vector<Rectangle> debugColliders;
@@ -193,10 +220,11 @@ struct Map {
     }
 
     void loadMap(const std::string& filename, const std::string& spawn) {
-        playerSpawn = spawn;
+        playerSpawnName = spawn;
         loadFromTMJ(RESOURCE_PATH + filename + ".tmj");
         loadCollisions((RESOURCE_PATH + filename + "_collisions.csv").c_str());
         loadStaticDrawables();
+        loadDialogues((RESOURCE_PATH + filename + "_dialogues.json").c_str());
     }
 
     void loadFromTMJ(const std::string& filename) {
@@ -324,7 +352,30 @@ struct Map {
                         }
                         sp.x = obj["x"].get<float>() * 2.0f;
                         sp.y = obj["y"].get<float>() * 2.0f;
+                        if (sp.who == "player") {
+                            if (sp.name == playerSpawnName)
+                                playerSpawn = sp;
+                            continue;
+                        }
                         spawnPoints.push_back(sp);
+                    }
+                }
+
+                else if (layer["name"] == LAYER_DIALOGUES) {
+                    for (json obj : layer["objects"]) {
+                        if (!obj.contains("properties")) continue;
+                        DialoguePoint dp;
+                        for (json property : obj["properties"]) {
+                            if (property["name"] == "src")
+                                dp.src = property["value"].get<std::string>();
+                        }
+                        dp.trigger = {
+                            obj["x"].get<float>() * 2.0f,           // Go from 16px tiles to 32px tiles
+                            obj["y"].get<float>() * 2.0f,
+                            obj["width"].get<float>() * 2.0f,
+                            obj["height"].get<float>() * 2.0f
+                        };
+                        dialoguePoints.push_back(dp);
                     }
                 }
             }
@@ -421,6 +472,22 @@ struct Map {
                             break;
                         }
                     }
+        }
+    }
+
+    void loadDialogues(const char* filename) {
+        dialogues.clear();
+
+        json j = loadJson(filename);
+        
+        for (json d : j["dialogues"]) {
+            Dialogue dia;
+            dia.name = d["name"].get<std::string>();
+            for (json s : d["sentences"]) {
+                dia.speaker.push_back(s["speaker"].get<std::string>());
+                dia.msg.push_back(s["msg"].get<std::string>());
+            }
+            dialogues.push_back(dia);
         }
     }
 
@@ -577,6 +644,53 @@ void initialize() {
 }
 
 void input(Player &player, Map &map) {
+    if (gameState == DIALOGUE) {
+        if (IsKeyPressed(KEY_Z)) {
+            if (!player.lineFinished) {
+                player.visibleChars = player.currentDialogue->msg[player.dialogueIndex].size();
+                player.lineFinished = true;
+            } else {
+                player.dialogueIndex++;
+
+                if (player.dialogueIndex >= (int)player.currentDialogue->msg.size()) {
+                    gameState = NORMAL;
+                    player.currentDialogue = nullptr;
+                } else {
+                    player.visibleChars = 0;
+                    player.textTimer = 0.0f;
+                    player.lineFinished = false;
+                }
+            }
+        }
+        else if (IsKeyPressed(KEY_X)) {
+            if (!player.lineFinished) {
+                player.visibleChars = player.currentDialogue->msg[player.dialogueIndex].size();
+                player.lineFinished = true;
+            }
+        }
+        return;
+    }
+
+    if (IsKeyPressed(KEY_Z)) {
+        for (DialoguePoint &dp : map.dialoguePoints) {
+            if (CheckCollisionRecs(player.body, dp.trigger)) {
+                for (Dialogue& dia : map.dialogues) {
+                    if (dp.src == dia.name) {
+                        gameState = DIALOGUE;
+                        player.currentDialogue = &dia;
+
+                        player.dialogueIndex = 0;
+                        player.visibleChars = 0;
+                        player.textTimer = 0.0f;
+                        player.lineFinished = false;
+
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     float dt = GetFrameTime();
 
     float dx = 0;
@@ -593,7 +707,7 @@ void input(Player &player, Map &map) {
 
     if (IsKeyPressed(KEY_F1)) DEBUG_MODE = !DEBUG_MODE;
 
-    if (player.inTransition) return;        // Block controls while in transition
+    if (gameState != NORMAL) return;        // Block controls while in transition or any other irregular state
 
     player.updatePlayerBody();
 
@@ -620,7 +734,7 @@ void input(Player &player, Map &map) {
 
     for (Transition& t : map.transitions) {
         if (CheckCollisionRecs(player.body, t.trigger)) {
-            player.inTransition = true;
+            gameState = TRANSITION;
             player.fading = true;
             player.pendingTransition = &t;
             break;
@@ -641,12 +755,8 @@ int main(void)
 
     Map map = Map();
     map.loadMap("mapa_dungeon", "player_1");
-    for (SpawnPoint& s : map.spawnPoints) {
-        if (s.name == map.playerSpawn) {
-            player.x = s.x;
-            player.y = s.y;
-        }
-    }
+    player.x = map.playerSpawn.x;
+    player.y = map.playerSpawn.y;
 
     camera.target.x = floor(camera.target.x);
     camera.target.y = floor(camera.target.y);
@@ -659,19 +769,15 @@ int main(void)
         //Input
         input(player, map);
 
-        if (player.inTransition) {
+        if (gameState == TRANSITION) {
             if (player.fading) {
                 player.fadeAlpha += 1 * GetFrameTime();
                 if (player.fadeAlpha >= 1.0f) {
                     player.fadeAlpha = 1.0f;
 
                     map.loadMap(player.pendingTransition->map, player.pendingTransition->spawnName);
-                    for (SpawnPoint& s : map.spawnPoints) {
-                        if (s.name == map.playerSpawn) {
-                            player.x = s.x;
-                            player.y = s.y;
-                        }
-                    }
+                    player.x = map.playerSpawn.x;
+                    player.y = map.playerSpawn.y;
                     player.updatePlayerBody();
 
                     player.fading = false;
@@ -680,7 +786,7 @@ int main(void)
                 player.fadeAlpha -= 1 * GetFrameTime();
                 if (player.fadeAlpha <= 0.0f) {
                     player.fadeAlpha = 0.0f;
-                    player.inTransition = false;
+                    gameState = NORMAL;
                     player.pendingTransition = nullptr;
                 }
             }
@@ -751,6 +857,9 @@ int main(void)
 
             for (Transition& t : map.transitions)
                 DrawRectangleLinesEx(t.trigger, 1, YELLOW);
+
+            for (DialoguePoint& dp : map.dialoguePoints)
+                DrawRectangleLinesEx(dp.trigger, 1, PURPLE);
         }
 
         // Draw fades
@@ -764,6 +873,66 @@ int main(void)
         }
         
         EndMode2D();
+
+        // Draw dialogues
+        if (gameState == DIALOGUE && player.currentDialogue) {
+            const std::string& text = player.currentDialogue->msg[player.dialogueIndex];
+
+            if (!player.lineFinished) {
+                player.textTimer += GetFrameTime();
+                if (player.textTimer >= player.textSpeed) {
+                    player.textTimer = 0.0f;
+                    player.visibleChars++;
+
+                    if (player.visibleChars >= (int)text.size()) {
+                        player.visibleChars = text.size();
+                        player.lineFinished = true;
+                    }
+                }
+            }
+        }
+        
+        if (gameState == DIALOGUE) {
+            Rectangle outer = { 40, GAME_HEIGHT - 180, GAME_WIDTH - 80, 140 };
+            Rectangle inner = { 46, GAME_HEIGHT - 174, GAME_WIDTH - 92, 128 };
+
+            DrawRectangleRec(outer, Fade(BLACK, 0.9f));
+            DrawRectangleRec(inner, Fade(DARKGRAY, 0.85f));
+
+            Dialogue* d = player.currentDialogue;
+            int i = player.dialogueIndex;
+
+            std::string speaker = d->speaker[i];
+            std::string fullText = d->msg[i];
+            std::string visibleText = fullText.substr(0, player.visibleChars);
+
+            DrawText(
+                speaker.c_str(),
+                inner.x + 10,
+                inner.y + 8,
+                20,
+                RAYWHITE
+            );
+
+            DrawText(
+                visibleText.c_str(),
+                inner.x + 10,
+                inner.y + 36,
+                20,
+                RAYWHITE
+            );
+
+            if (player.lineFinished) {
+                DrawText(
+                    "Z",
+                    inner.x + inner.width - 20,
+                    inner.y + inner.height - 20,
+                    16,
+                    RAYWHITE
+                );
+            }
+        }
+
         EndTextureMode();
         
         BeginDrawing();

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="50" height="50" tilewidth="16" tileheight="16" infinite="0" nextlayerid="11" nextobjectid="16">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="50" height="50" tilewidth="16" tileheight="16" infinite="0" nextlayerid="12" nextobjectid="19">
  <editorsettings>
   <export target="mapa_dungeon.tmj" format="json"/>
  </editorsettings>
@@ -318,7 +318,20 @@
   <object id="14" x="547.091" y="595.455" width="11.6364" height="9.81818">
    <properties>
     <property name="name" value="player_1"/>
-    <property name="who" value="Player"/>
+    <property name="who" value="player"/>
+   </properties>
+  </object>
+  <object id="18" x="511.25" y="527.75" width="7.75" height="8.75">
+   <properties>
+    <property name="name" value="npc_1"/>
+    <property name="who" value="npc"/>
+   </properties>
+  </object>
+ </objectgroup>
+ <objectgroup id="11" name="Dialogues" visible="0">
+  <object id="16" x="507.75" y="526" width="24.5" height="16.25">
+   <properties>
+    <property name="src" value="dialogue_1"/>
    </properties>
   </object>
  </objectgroup>
