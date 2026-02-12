@@ -23,6 +23,11 @@ const int tileSize = 32;
 const int GAME_WIDTH  = 1280;
 const int GAME_HEIGHT = 720;
 
+const int DOWN = 10;
+const int UP = 8;
+const int RIGHT = 11;
+const int LEFT = 9;
+
 enum GameState {
     NORMAL, TRANSITION, DIALOGUE
 };
@@ -71,11 +76,10 @@ struct Player {
     //int frameCount = 4;
     float frameTimer = 0.0f;
     
-    int direction = 0; //0 DOWN, 1 UP, 2 RIGHT, 3 LEFT              //10 8 11 9
+    int direction = DOWN;
 
     float speed = 150.0f;
 
-    int backupKey = 0;
     int lastKey = 0;
 
     bool fading = false;
@@ -96,7 +100,7 @@ struct Player {
         UnloadImage(image);
 
         spriteW = (float)texture.width / 13;
-        spriteH = (float)texture.height / 54;            // 3 DIRECTIONS
+        spriteH = (float)texture.height / 54;
 
         updatePlayerBody();
     }
@@ -123,27 +127,39 @@ struct Player {
         if (IsKeyUp(lastKey))
             switch (lastKey) { 
                 case KEY_DOWN:  //264
+                    if (dx != 0)
+                        direction = (dx > 0) ? RIGHT : LEFT;
+                    else direction = UP;
+                    break;
                 case KEY_UP:    //265
-                    direction = (dx > 0) ? 11 : 9;
+                    if (dx != 0)
+                        direction = (dx > 0) ? RIGHT : LEFT;
+                    else direction = DOWN;
                     break;
                 case KEY_RIGHT: //262
+                    if (dy != 0)
+                        direction = (dy > 0) ? DOWN : UP;
+                    else direction = LEFT;
+                    break;
                 case KEY_LEFT:  //263
-                    direction = (dy > 0) ? 10 : 8;
+                    if (dy != 0)
+                        direction = (dy > 0) ? DOWN : UP;
+                    else direction = RIGHT;
                     break;
             }
         else
             switch (lastKey) { 
                 case KEY_DOWN:  //264
-                    direction = 10;
+                    direction = DOWN;
                     break;
                 case KEY_UP:    //265
-                    direction = 8;
+                    direction = UP;
                     break;
                 case KEY_RIGHT: //262
-                    direction = 11;
+                    direction = RIGHT;
                     break;
                 case KEY_LEFT:  //263
-                    direction = 9;
+                    direction = LEFT;
                     break;
             }
 
@@ -153,6 +169,22 @@ struct Player {
             frameTimer -= 0.10f;
             frame = (frame + 1) % 9;
         }
+    }
+
+    Rectangle getInteractionZone() {
+        float size = 10.0f;
+
+        switch (direction) {
+            case DOWN:
+                return { body.x, body.y + body.height, body.width, size + 5.0f };
+            case UP:
+                return { body.x, body.y - size - 5.0f, body.width, size + 5.0f };
+            case RIGHT:
+                return { body.x + size, body.y, body.width, size };
+            case LEFT:
+                return { body.x - size, body.y, body.width, size };
+        }
+        return {};
     }
 };
 
@@ -185,7 +217,7 @@ struct WorldObject {
 };
 
 struct SpawnPoint {
-    std::string who, name;
+    std::string who, name, frame;
     float x, y;
 };
 
@@ -193,6 +225,54 @@ struct DialoguePoint {
     Rectangle trigger;
     std::string src;
 };
+
+struct NPC {
+    std::string name;
+
+    float x, y;
+    Rectangle body;
+    Texture2D texture;
+    float spriteW;
+    float spriteH;
+
+    int frame = 0;
+    float frameTimer = 0.0f;
+    int direction = DOWN;
+
+    float speed = 150.0f;
+
+    NPC() { }
+
+    void buildNpc(std::string& frame_, std::string& name_, float& x_, float& y_) {
+        name = name_;
+        x = x_;
+        y = y_;
+
+        direction = loadFrame(frame_);
+
+        Image image = LoadImage((RESOURCE_PATH + name + ".png").c_str());
+        texture = LoadTextureFromImage(image);
+        UnloadImage(image);
+
+        spriteW = (float)texture.width / 13;
+        spriteH = (float)texture.height / 54;
+
+        updateBody();
+    }
+
+    int loadFrame(std::string frame_) {
+        if (frame_ == "FRAME_UP") return UP;
+        else if (frame_ == "FRAME_RIGHT") return RIGHT;
+        else if (frame_ == "FRAME_LEFT") return LEFT;
+        //if (frame_ == "FRAME_DOWN") return DOWN;
+        return DOWN;
+    }
+
+    void updateBody() {
+        body = Rectangle{x + 20.0f, y + 17.0f, 24.0f, 16.0f};
+    }
+};
+
 
 struct Map {
     std::vector<TileLayer> layers;
@@ -205,6 +285,7 @@ struct Map {
     std::vector<SpawnPoint> spawnPoints;
     std::vector<DialoguePoint> dialoguePoints;
     std::vector<Dialogue> dialogues;
+    std::vector<NPC> npcs;
 
     std::string playerSpawnName;
     SpawnPoint playerSpawn;
@@ -225,6 +306,7 @@ struct Map {
         loadCollisions((RESOURCE_PATH + filename + "_collisions.csv").c_str());
         loadStaticDrawables();
         loadDialogues((RESOURCE_PATH + filename + "_dialogues.json").c_str());
+        loadNpcs();
     }
 
     void loadFromTMJ(const std::string& filename) {
@@ -349,6 +431,8 @@ struct Map {
                                 sp.who = property["value"].get<std::string>();
                             else if (property["name"] == "name")
                                 sp.name = property["value"].get<std::string>();
+                            else if (property["name"] == "frame")
+                                sp.frame = property["value"].get<std::string>();
                         }
                         sp.x = obj["x"].get<float>() * 2.0f;
                         sp.y = obj["y"].get<float>() * 2.0f;
@@ -491,6 +575,16 @@ struct Map {
         }
     }
 
+    void loadNpcs() {
+        npcs.clear();
+        for (SpawnPoint& sp : spawnPoints) {
+            if (sp.who != "npc")
+                continue;
+            npcs.emplace_back();
+            npcs.back().buildNpc(sp.frame, sp.name, sp.x, sp.y);
+        }
+    }
+
     int collisionValue(int tx, int ty) {
         if (tx < 0 || ty < 0 || ty >= height || tx >= width)
             return true; // Outside the map
@@ -538,6 +632,10 @@ struct Map {
         else return Rectangle {};       // Error, should never happen
     }
 
+    bool checkCollision(Rectangle& playerBody) {
+        return (checkMapCollision(playerBody) || checkNpcCollision(playerBody));
+    }
+
     bool checkMapCollision(Rectangle& playerBody) {
         int left   = (int)floor(playerBody.x / tileSize - 1.0f);
         int right  = (int)floor((playerBody.x + playerBody.width) / tileSize + 1.0f);
@@ -558,6 +656,13 @@ struct Map {
                     return true;
             }
         }
+        return false;
+    }
+
+    bool checkNpcCollision(Rectangle& playerBody) {
+        for (NPC npc : npcs)
+            if (CheckCollisionRecs(playerBody, npc.body))
+                return true;
         return false;
     }
 
@@ -672,12 +777,15 @@ void input(Player &player, Map &map) {
     }
 
     if (IsKeyPressed(KEY_Z)) {
+        // Object dialogues
         for (DialoguePoint &dp : map.dialoguePoints) {
             if (CheckCollisionRecs(player.body, dp.trigger)) {
                 for (Dialogue& dia : map.dialogues) {
                     if (dp.src == dia.name) {
                         gameState = DIALOGUE;
                         player.currentDialogue = &dia;
+
+                        player.frame = 0;
 
                         player.dialogueIndex = 0;
                         player.visibleChars = 0;
@@ -687,6 +795,27 @@ void input(Player &player, Map &map) {
                         return;
                     }
                 }
+            }
+        }
+
+        // NPC dialogues
+        Rectangle interact = player.getInteractionZone();
+        map.debugColliders.push_back(interact);
+
+        for (NPC& npc : map.npcs) {
+            if (CheckCollisionRecs(interact, npc.body)) {
+                //startDialogueWith(npc);
+                gameState = DIALOGUE;
+                player.currentDialogue = &map.dialogues.front();        //TODO: IMPLEMENT ACTUAL NPC DIALOGUES, THIS IS JUST A PLACEHOLDER
+
+                player.frame = 0;
+
+                player.dialogueIndex = 0;
+                player.visibleChars = 0;
+                player.textTimer = 0.0f;
+                player.lineFinished = false;
+
+                return;
             }
         }
     }
@@ -701,9 +830,9 @@ void input(Player &player, Map &map) {
     if (IsKeyDown(KEY_UP))    dy -= player.speed * dt;
     if (IsKeyDown(KEY_DOWN))  dy += player.speed * dt;
 
-    player.backupKey = GetKeyPressed();
-    if (player.backupKey != 0)
-        player.lastKey = player.backupKey;
+    int backupKey = GetKeyPressed();
+    if ( (backupKey == KEY_RIGHT) || (backupKey == KEY_LEFT) || (backupKey == KEY_UP) || (backupKey == KEY_DOWN) )  
+        player.lastKey = backupKey;
 
     if (IsKeyPressed(KEY_F1)) DEBUG_MODE = !DEBUG_MODE;
 
@@ -715,7 +844,7 @@ void input(Player &player, Map &map) {
         Rectangle playerCopy = player.body;
         playerCopy.x += dx;
 
-        if (!map.checkMapCollision(playerCopy))
+        if (!map.checkCollision(playerCopy))
             player.x += dx;
     }
 
@@ -725,7 +854,7 @@ void input(Player &player, Map &map) {
         Rectangle playerCopy = player.body;
         playerCopy.y += dy;
 
-        if (!map.checkMapCollision(playerCopy))
+        if (!map.checkCollision(playerCopy))
             player.y += dy;
     }
 
@@ -810,6 +939,7 @@ int main(void)
         // Draw player and other drawables
         map.dynamicDrawables.clear();
 
+        // Player
         Rectangle src = { player.frame * player.spriteW, 
                         player.direction * player.spriteH, 
                         player.spriteW, 
@@ -826,6 +956,31 @@ int main(void)
 
         map.dynamicDrawables.push_back(playerDraw);
 
+        // NPCs
+        for (NPC& npc : map.npcs) {
+            Drawable d;
+            d.texture = &npc.texture;
+
+            d.src = {
+                npc.frame * npc.spriteW,
+                npc.direction * npc.spriteH,
+                npc.spriteW,
+                npc.spriteH
+            };
+
+            d.dst = {
+                floor(npc.x),
+                floor(npc.y) - (npc.spriteH - tileSize),
+                npc.spriteW,
+                npc.spriteH
+            };
+
+            d.sortY = npc.body.y + npc.body.height;
+
+            map.dynamicDrawables.push_back(d);
+        }
+
+        // Map drawables
         std::vector<Drawable*> drawables;
         drawables.reserve(map.staticDrawables.size() + map.dynamicDrawables.size());
 
@@ -860,6 +1015,9 @@ int main(void)
 
             for (DialoguePoint& dp : map.dialoguePoints)
                 DrawRectangleLinesEx(dp.trigger, 1, PURPLE);
+
+            for (NPC& npc : map.npcs)
+                DrawRectangleLinesEx(npc.body, 1, LIME);
         }
 
         // Draw fades

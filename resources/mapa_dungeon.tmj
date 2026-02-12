@@ -414,6 +414,33 @@
                  "width":11.6364,
                  "x":547.091,
                  "y":595.455
+                }, 
+                {
+                 "height":8.75,
+                 "id":18,
+                 "name":"",
+                 "properties":[
+                        {
+                         "name":"frame",
+                         "type":"string",
+                         "value":"FRAME_DOWN"
+                        }, 
+                        {
+                         "name":"name",
+                         "type":"string",
+                         "value":"character-spritesheet"
+                        }, 
+                        {
+                         "name":"who",
+                         "type":"string",
+                         "value":"npc"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":7.75,
+                 "x":511.25,
+                 "y":527.75
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -440,8 +467,8 @@
                  "type":"",
                  "visible":true,
                  "width":24.5,
-                 "x":507.75,
-                 "y":526
+                 "x":644,
+                 "y":536
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -511,7 +538,7 @@
          "y":0
         }],
  "nextlayerid":12,
- "nextobjectid":18,
+ "nextobjectid":19,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.11.2",
