@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="50" height="50" tilewidth="16" tileheight="16" infinite="0" nextlayerid="12" nextobjectid="19">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="50" height="50" tilewidth="16" tileheight="16" infinite="0" nextlayerid="13" nextobjectid="20">
  <editorsettings>
   <export target="mapa_dungeon.tmj" format="json"/>
  </editorsettings>
@@ -172,7 +172,7 @@
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1032,0,1033,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -315,17 +315,25 @@
   </object>
  </objectgroup>
  <objectgroup id="10" name="SpawnPoints">
-  <object id="14" x="547.091" y="595.455" width="11.6364" height="9.81818">
+  <object id="14" x="552" y="592.182" width="11.6364" height="9.81818">
    <properties>
     <property name="name" value="player_1"/>
     <property name="who" value="player"/>
    </properties>
   </object>
-  <object id="18" x="511.25" y="527.75" width="7.75" height="8.75">
+  <object id="18" x="512.159" y="528.023" width="7.75" height="8.75">
    <properties>
+    <property name="dialogue" value="dialogue_1"/>
     <property name="frame" value="FRAME_DOWN"/>
     <property name="name" value="character-spritesheet"/>
     <property name="who" value="npc"/>
+   </properties>
+  </object>
+ </objectgroup>
+ <objectgroup id="12" name="Events">
+  <object id="19" x="553.5" y="547.875" width="16.125" height="9.5">
+   <properties>
+    <property name="name" value="event_1"/>
    </properties>
   </object>
  </objectgroup>

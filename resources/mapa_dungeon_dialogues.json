@@ -6,11 +6,11 @@
             "sentences" : [
                 {
                     "speaker" : "Player",
-                    "msg" : "Hellooooooooooooooooooooo"
+                    "msg" : "Holaaaaaa amigooo"
                 },
                 {
-                    "speaker" : "Wall",
-                    "msg" : "Oh, hellooooooooooooooooooooooooooo"
+                    "speaker" : "NPC",
+                    "msg" : "Holaaaaa"
                 }
             ]
         }

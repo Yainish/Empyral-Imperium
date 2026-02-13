@@ -17,6 +17,7 @@ const std::string LAYER_WORLDOBJECTS = "WorldObjects";
 const std::string LAYER_TRANSITIONS = "Transitions";
 const std::string LAYER_SPAWNPOINTS = "SpawnPoints";
 const std::string LAYER_DIALOGUES = "Dialogues";
+const std::string LAYER_EVENTS = "Events";
 
 const int tileSize = 32;
 
@@ -29,10 +30,10 @@ const int RIGHT = 11;
 const int LEFT = 9;
 
 enum GameState {
-    NORMAL, TRANSITION, DIALOGUE
+    STATE_NORMAL, STATE_TRANSITION, STATE_DIALOGUE, STATE_EVENT
 };
 
-GameState gameState = NORMAL;
+GameState gameState = STATE_NORMAL;
 
 using json = nlohmann::json;
 
@@ -58,9 +59,125 @@ struct Transition {
     std::string map, spawnName;
 };
 
+struct NPC;
+
+enum EventActionType {
+    ACTION_MOVE_NPC, ACTION_MOVE_PLAYER, ACTION_MOVE_CAMERA, ACTION_DIALOGUE, ACTION_GROUP
+};
+
+struct EventAction {
+    EventActionType type;
+    bool started = false;
+    float target;
+
+    // Moves
+    NPC* npc;        // Only in ACTION_MOVE_NPC
+    int tiles;
+    int direction;
+
+    // Dialogues
+    std::string dialogue;   // Only in ACTION_DIALOGUE
+
+    // Groups
+    std::vector<EventAction> subactions; // Only in ACTION_GROUP
+    bool finished = false;               // Only in ACTION_GROUP
+};
+
+struct Event {
+    std::string name;
+    std::vector<EventAction> actions;
+    int eventIndex = 0;
+    bool triggered = false;
+};
+
 struct Dialogue {
     std::string name;
     std::vector<std::string> speaker, msg;
+};
+
+struct NPC {
+    std::string name;
+
+    float x, y;
+    Rectangle body;
+    Texture2D texture;
+    float spriteW;
+    float spriteH;
+
+    int frame = 0;
+    float frameTimer = 0.0f;
+    float frameMaxTimer = 0.10f;
+    int direction = DOWN;
+    int default_direction = DOWN;
+
+    float speed = 150.0f;
+
+    Dialogue dialogue;
+    bool hasDialogue = false;
+
+    NPC() { }
+
+    void buildNpc(std::string& frame_, std::string& name_, float& x_, float& y_) {
+        name = name_;
+        x = x_;
+        y = y_;
+
+        direction = loadFrame(frame_);
+        default_direction = direction;
+
+        Image image = LoadImage((RESOURCE_PATH + name + ".png").c_str());
+        texture = LoadTextureFromImage(image);
+        UnloadImage(image);
+
+        spriteW = (float)texture.width / 13;
+        spriteH = (float)texture.height / 54;
+
+        updateBody();
+    }
+
+    void buildNpc(std::string& frame_, std::string& name_, float& x_, float& y_, Dialogue& d) {
+        buildNpc(frame_, name_, x_, y_);
+        dialogue = d;
+        hasDialogue = true;
+    }
+
+    int loadFrame(std::string frame_) {
+        if (frame_ == "FRAME_UP") return UP;
+        else if (frame_ == "FRAME_RIGHT") return RIGHT;
+        else if (frame_ == "FRAME_LEFT") return LEFT;
+        //if (frame_ == "FRAME_DOWN") return DOWN;
+        return DOWN;
+    }
+
+    void updateBody() {
+        body = Rectangle{x + 20.0f, y + 17.0f, 24.0f, 16.0f};
+    }
+
+    void updateDirection(int dir) {
+        switch (dir) {
+            case DOWN:
+                direction = UP;
+                break;
+            case UP:
+                direction = DOWN;
+                break;
+            case RIGHT:
+                direction = LEFT;
+                break;
+            case LEFT:
+                direction = RIGHT;
+                break;
+        }
+    }
+
+    void updateFrame(float frameTime) {
+        frameTimer += frameTime;
+
+        if (frameTimer >= frameMaxTimer) {
+            frameTimer -= frameMaxTimer;
+            frame = (frame + 1) % 9;            // This 9 represents 9 frames in walking animation, should be changed if more animations are needed
+        }
+    }
 };
 
 struct Player {
@@ -75,6 +192,7 @@ struct Player {
     int frame = 0;
     //int frameCount = 4;
     float frameTimer = 0.0f;
+    float frameMaxTimer = 0.10f;
     
     int direction = DOWN;
 
@@ -85,8 +203,11 @@ struct Player {
     bool fading = false;
     float fadeAlpha = 0.0f;
     Transition* pendingTransition = nullptr;
+
+    Event* ongoingEvent = nullptr;
     
     Dialogue* currentDialogue = nullptr;
+    NPC* currentDialogueNPC = nullptr;
     int dialogueIndex = 0;
     int visibleChars = 0;
     float textTimer = 0.0f;
@@ -115,6 +236,15 @@ struct Player {
 
         //Feet collision
         body = Rectangle{x + 22.0f, y + 25.0f, 20.0f, 8.0f};
+    }
+
+    void updatePlayerFrame(float frameTime) {
+        frameTimer += frameTime;
+
+        if (frameTimer >= frameMaxTimer) {
+            frameTimer -= frameMaxTimer;
+            frame = (frame + 1) % 9;            // This 9 represents 9 frames in walking animation, should be changed if more animations are needed
+        }
     }
 
     void updatePlayerAnimation(float frameTime, float dx, float dy, int lastKey) {
@@ -163,12 +293,7 @@ struct Player {
                     break;
             }
 
-        frameTimer += frameTime;
-
-        if (frameTimer >= 0.10f) {
-            frameTimer -= 0.10f;
-            frame = (frame + 1) % 9;
-        }
+        updatePlayerFrame(frameTime);
     }
 
     Rectangle getInteractionZone() {
@@ -219,6 +344,7 @@ struct WorldObject {
 struct SpawnPoint {
     std::string who, name, frame;
     float x, y;
+    std::string dialogue = "";
 };
 
 struct DialoguePoint {
@@ -226,53 +352,10 @@ struct DialoguePoint {
     std::string src;
 };
 
-struct NPC {
+struct EventPoint {
+    Rectangle trigger;
     std::string name;
-
-    float x, y;
-    Rectangle body;
-    Texture2D texture;
-    float spriteW;
-    float spriteH;
-
-    int frame = 0;
-    float frameTimer = 0.0f;
-    int direction = DOWN;
-
-    float speed = 150.0f;
-
-    NPC() { }
-
-    void buildNpc(std::string& frame_, std::string& name_, float& x_, float& y_) {
-        name = name_;
-        x = x_;
-        y = y_;
-
-        direction = loadFrame(frame_);
-
-        Image image = LoadImage((RESOURCE_PATH + name + ".png").c_str());
-        texture = LoadTextureFromImage(image);
-        UnloadImage(image);
-
-        spriteW = (float)texture.width / 13;
-        spriteH = (float)texture.height / 54;
-
-        updateBody();
-    }
-
-    int loadFrame(std::string frame_) {
-        if (frame_ == "FRAME_UP") return UP;
-        else if (frame_ == "FRAME_RIGHT") return RIGHT;
-        else if (frame_ == "FRAME_LEFT") return LEFT;
-        //if (frame_ == "FRAME_DOWN") return DOWN;
-        return DOWN;
-    }
-
-    void updateBody() {
-        body = Rectangle{x + 20.0f, y + 17.0f, 24.0f, 16.0f};
-    }
 };
-
 
 struct Map {
     std::vector<TileLayer> layers;
@@ -286,6 +369,8 @@ struct Map {
     std::vector<DialoguePoint> dialoguePoints;
     std::vector<Dialogue> dialogues;
     std::vector<NPC> npcs;
+    std::vector<EventPoint> eventPoints;
+    std::vector<Event> events;
 
     std::string playerSpawnName;
     SpawnPoint playerSpawn;
@@ -307,6 +392,7 @@ struct Map {
         loadStaticDrawables();
         loadDialogues((RESOURCE_PATH + filename + "_dialogues.json").c_str());
         loadNpcs();
+        loadEvents((RESOURCE_PATH + filename + "_events.json").c_str());
     }
 
     void loadFromTMJ(const std::string& filename) {
@@ -315,6 +401,7 @@ struct Map {
         worldObjects.clear();
         transitions.clear();
         spawnPoints.clear();
+        eventPoints.clear();
 
         json j = loadJson(filename);
 
@@ -433,9 +520,12 @@ struct Map {
                                 sp.name = property["value"].get<std::string>();
                             else if (property["name"] == "frame")
                                 sp.frame = property["value"].get<std::string>();
+                            else if (property["name"] == "dialogue")
+                                sp.dialogue = property["value"].get<std::string>();
                         }
                         sp.x = obj["x"].get<float>() * 2.0f;
                         sp.y = obj["y"].get<float>() * 2.0f;
+                        sp.x -= 16.0f;                          //Small offset accounting for ~16 blank pixels on most spritesheets
                         if (sp.who == "player") {
                             if (sp.name == playerSpawnName)
                                 playerSpawn = sp;
@@ -460,6 +550,24 @@ struct Map {
                             obj["height"].get<float>() * 2.0f
                         };
                         dialoguePoints.push_back(dp);
+                    }
+                }
+
+                else if (layer["name"] == LAYER_EVENTS) {
+                    for (json obj : layer["objects"]) {
+                        if (!obj.contains("properties")) continue;
+                        EventPoint ep;
+                        for (json property : obj["properties"]) {
+                            if (property["name"] == "name")
+                                ep.name = property["value"].get<std::string>();
+                        }
+                        ep.trigger = {
+                            obj["x"].get<float>() * 2.0f,           // Go from 16px tiles to 32px tiles
+                            obj["y"].get<float>() * 2.0f,
+                            obj["width"].get<float>() * 2.0f,
+                            obj["height"].get<float>() * 2.0f
+                        };
+                        eventPoints.push_back(ep);
                     }
                 }
             }
@@ -580,8 +688,70 @@ struct Map {
         for (SpawnPoint& sp : spawnPoints) {
             if (sp.who != "npc")
                 continue;
-            npcs.emplace_back();
-            npcs.back().buildNpc(sp.frame, sp.name, sp.x, sp.y);
+            if (sp.dialogue != "") {
+                for (Dialogue& dia : dialogues) {
+                    if (sp.dialogue == dia.name) {
+                        npcs.emplace_back();
+                        npcs.back().buildNpc(sp.frame, sp.name, sp.x, sp.y, dia);
+                    }
+                }
+            }
+            else {
+                npcs.emplace_back();
+                npcs.back().buildNpc(sp.frame, sp.name, sp.x, sp.y);
+            }
+        }
+    }
+
+    EventAction parseAction(const json& a) {
+        EventAction action;
+        std::string str_type = a["type"].get<std::string>();
+        EventActionType type = ACTION_DIALOGUE;                     // Should never keep this, but compiler will throw warning if it's not there
+        if (str_type == "ACTION_DIALOGUE") type = ACTION_DIALOGUE;
+        if (str_type == "ACTION_MOVE_NPC") type = ACTION_MOVE_NPC;
+        if (str_type == "ACTION_MOVE_CAMERA") type = ACTION_MOVE_CAMERA;
+        if (str_type == "ACTION_MOVE_PLAYER") type = ACTION_MOVE_PLAYER;
+        if (str_type == "ACTION_GROUP") type = ACTION_GROUP;
+        action.type = type;
+        if ((type == ACTION_MOVE_CAMERA) || (type == ACTION_MOVE_NPC) || (type == ACTION_MOVE_PLAYER)) {
+            action.tiles = a["tiles"].get<int>();
+            std::string str_direction = a["direction"].get<std::string>();
+            int direction = RIGHT;                                              // Again, should never keep this value
+            if (str_direction == "RIGHT") direction = RIGHT;
+            if (str_direction == "LEFT") direction = LEFT;
+            if (str_direction == "UP") direction = UP;
+            if (str_direction == "DOWN") direction = DOWN;
+            action.direction = direction;
+        }
+        if (type == ACTION_MOVE_NPC) {
+            std::string str_npc = a["npc"].get<std::string>();
+            NPC* npc = nullptr;
+            for (NPC& n : npcs)
+                if (n.name == str_npc)
+                    npc = &n;
+            action.npc = npc;
+        }
+        if (type == ACTION_DIALOGUE)
+            action.dialogue = a["dialogue"].get<std::string>();
+        if (type == ACTION_GROUP)
+            for (json sub : a["actions"])
+                action.subactions.push_back(parseAction(sub));
+        return action;
+    }
+
+    void loadEvents(const char* filename) {
+        events.clear();
+
+        json j = loadJson(filename);
+        
+        for (json e : j["events"]) {
+            Event ev;
+            ev.name = e["name"].get<std::string>();
+            // TODO: GESTIÓN DE TRIGGERED CON FLAGS GLOBALES QUE PERSISTAN A TRANSICIONES DE MAPA
+            for (json a : e["actions"]) {
+                ev.actions.push_back(parseAction(a));
+            }
+            events.push_back(ev);
         }
     }
 
@@ -749,7 +919,7 @@ void initialize() {
 }
 
 void input(Player &player, Map &map) {
-    if (gameState == DIALOGUE) {
+    if (gameState == STATE_DIALOGUE) {
         if (IsKeyPressed(KEY_Z)) {
             if (!player.lineFinished) {
                 player.visibleChars = player.currentDialogue->msg[player.dialogueIndex].size();
@@ -758,8 +928,12 @@ void input(Player &player, Map &map) {
                 player.dialogueIndex++;
 
                 if (player.dialogueIndex >= (int)player.currentDialogue->msg.size()) {
-                    gameState = NORMAL;
+                    gameState = STATE_NORMAL;
                     player.currentDialogue = nullptr;
+                    if (player.currentDialogueNPC != nullptr) {
+                        player.currentDialogueNPC->direction = player.currentDialogueNPC->default_direction;
+                        player.currentDialogueNPC = nullptr;
+                    }
                 } else {
                     player.visibleChars = 0;
                     player.textTimer = 0.0f;
@@ -777,12 +951,12 @@ void input(Player &player, Map &map) {
     }
 
     if (IsKeyPressed(KEY_Z)) {
-        // Object dialogues
+        // Object dialogues - could be rewritten to use interaction zone, not really used
         for (DialoguePoint &dp : map.dialoguePoints) {
             if (CheckCollisionRecs(player.body, dp.trigger)) {
                 for (Dialogue& dia : map.dialogues) {
                     if (dp.src == dia.name) {
-                        gameState = DIALOGUE;
+                        gameState = STATE_DIALOGUE;
                         player.currentDialogue = &dia;
 
                         player.frame = 0;
@@ -803,12 +977,14 @@ void input(Player &player, Map &map) {
         map.debugColliders.push_back(interact);
 
         for (NPC& npc : map.npcs) {
-            if (CheckCollisionRecs(interact, npc.body)) {
-                //startDialogueWith(npc);
-                gameState = DIALOGUE;
-                player.currentDialogue = &map.dialogues.front();        //TODO: IMPLEMENT ACTUAL NPC DIALOGUES, THIS IS JUST A PLACEHOLDER
+            if (npc.hasDialogue && CheckCollisionRecs(interact, npc.body)) {
+                gameState = STATE_DIALOGUE;
+                player.currentDialogue = &npc.dialogue;
+                player.currentDialogueNPC = &npc;
 
                 player.frame = 0;
+
+                npc.updateDirection(player.direction);
 
                 player.dialogueIndex = 0;
                 player.visibleChars = 0;
@@ -836,7 +1012,17 @@ void input(Player &player, Map &map) {
 
     if (IsKeyPressed(KEY_F1)) DEBUG_MODE = !DEBUG_MODE;
 
-    if (gameState != NORMAL) return;        // Block controls while in transition or any other irregular state
+    if (gameState != STATE_NORMAL) return;        // Block controls while in transition or any other irregular state
+
+    // Very basic running system
+    if (IsKeyDown(KEY_LEFT_SHIFT)) {
+        player.speed = 250.0f;
+        player.frameMaxTimer = 0.08f;
+    }
+    else {
+        player.speed = 150.0f;
+        player.frameMaxTimer = 0.10f;
+    }
 
     player.updatePlayerBody();
 
@@ -863,12 +1049,168 @@ void input(Player &player, Map &map) {
 
     for (Transition& t : map.transitions) {
         if (CheckCollisionRecs(player.body, t.trigger)) {
-            gameState = TRANSITION;
+            gameState = STATE_TRANSITION;
             player.fading = true;
             player.pendingTransition = &t;
             break;
         }
     }
+
+    for (EventPoint& ep : map.eventPoints) {
+        if (CheckCollisionRecs(player.body, ep.trigger)) {
+            for (Event& ev : map.events) {
+                if (ep.name == ev.name) {
+                    if (ev.triggered) break;
+                    player.ongoingEvent = &ev;
+                    gameState = STATE_EVENT;
+                }
+            }
+            break;
+        }
+    }
+}
+
+bool executeAction(EventAction& action, Player& player, Camera2D& camera) {
+    switch (action.type) {
+        case ACTION_DIALOGUE: {
+            return true;
+            break;
+        }
+        case ACTION_MOVE_CAMERA: {
+            return true;
+            break;
+        }
+        case ACTION_MOVE_NPC: {
+            NPC* npc = action.npc;
+            if (!action.started) {
+                action.started = true;
+                npc->direction = action.direction;
+                switch (action.direction) {
+                    case RIGHT:
+                        action.target = npc->x + action.tiles * tileSize;
+                        break;
+                    case LEFT:
+                        action.target = npc->x - action.tiles * tileSize;
+                        break;
+                    case DOWN:
+                        action.target = npc->y + action.tiles * tileSize;
+                        break;
+                    case UP:
+                        action.target = npc->y - action.tiles * tileSize;
+                        break;
+                }
+            }
+            
+            float distance = 0.0f;
+            switch (action.direction) {
+                case RIGHT:
+                case LEFT:
+                    distance = abs(action.target - npc->x);
+                    break;
+                case UP:
+                case DOWN:
+                    distance = abs(action.target - npc->y);
+                    break;
+            }
+
+            if (distance > 1.0f) {
+                switch (action.direction) {
+                    case RIGHT:
+                        npc->x += npc->speed * GetFrameTime();
+                        break;
+                    case LEFT:
+                        npc->x -= npc->speed * GetFrameTime();
+                        break;
+                    case DOWN:
+                        npc->y += npc->speed * GetFrameTime();
+                        break;
+                    case UP:
+                        npc->y -= npc->speed * GetFrameTime();
+                        break;
+                }
+
+                npc->updateBody();
+                npc->updateFrame(GetFrameTime());
+
+            } else {
+                npc->frame = 0;
+                return true;
+            }
+            break;
+        }
+        case ACTION_MOVE_PLAYER: {
+            if (!action.started) {
+                action.started = true;
+                player.direction = action.direction;
+                switch (action.direction) {
+                    case RIGHT:
+                        action.target = player.x + action.tiles * tileSize;
+                        break;
+                    case LEFT:
+                        action.target = player.x - action.tiles * tileSize;
+                        break;
+                    case DOWN:
+                        action.target = player.y + action.tiles * tileSize;
+                        break;
+                    case UP:
+                        action.target = player.y - action.tiles * tileSize;
+                        break;
+                }
+            }
+            
+            float distance = 0.0f;
+            switch (action.direction) {
+                case RIGHT:
+                case LEFT:
+                    distance = abs(action.target - player.x);
+                    break;
+                case UP:
+                case DOWN:
+                    distance = abs(action.target - player.y);
+                    break;
+            }
+
+            if (distance > 1.0f) {
+                switch (action.direction) {
+                    case RIGHT:
+                        player.x += player.speed * GetFrameTime();
+                        break;
+                    case LEFT:
+                        player.x -= player.speed * GetFrameTime();
+                        break;
+                    case DOWN:
+                        player.y += player.speed * GetFrameTime();
+                        break;
+                    case UP:
+                        player.y -= player.speed * GetFrameTime();
+                        break;
+                }
+
+                // Could define a PLAYER_MOVEMENT_NOFOLLOW or something similar if needed
+                camera.target = { floor(player.x + tileSize/2.0f), floor(player.y + tileSize/2.0f) };
+
+                player.updatePlayerBody();
+                player.updatePlayerFrame(GetFrameTime());
+
+            } else return true;
+            break;
+        }
+        case ACTION_GROUP: {
+            bool allFinished = true;
+            for (EventAction& sub : action.subactions) {
+                if (!sub.finished) {
+                    bool done = executeAction(sub, player, camera);
+                    if (!done)
+                        allFinished = false;
+                    else
+                        sub.finished = true;
+                }
+            }
+            if (allFinished) return true;
+            break;
+        }
+    }
+    return false;
 }
 
 int main(void)
@@ -898,7 +1240,8 @@ int main(void)
         //Input
         input(player, map);
 
-        if (gameState == TRANSITION) {
+        // Transitions
+        if (gameState == STATE_TRANSITION) {
             if (player.fading) {
                 player.fadeAlpha += 1 * GetFrameTime();
                 if (player.fadeAlpha >= 1.0f) {
@@ -915,14 +1258,33 @@ int main(void)
                 player.fadeAlpha -= 1 * GetFrameTime();
                 if (player.fadeAlpha <= 0.0f) {
                     player.fadeAlpha = 0.0f;
-                    gameState = NORMAL;
+                    gameState = STATE_NORMAL;
                     player.pendingTransition = nullptr;
                 }
             }
         }
 
         //Camera update
-        camera.target = { floor(player.x + tileSize/2.0f), floor(player.y + tileSize/2.0f) };       //Floored to avoid visual bugs, player must also be floored
+        if (gameState != STATE_EVENT)
+            camera.target = { floor(player.x + tileSize/2.0f), floor(player.y + tileSize/2.0f) };       //Floored to avoid visual bugs, player must also be floored
+        
+        // Events
+        if (gameState == STATE_EVENT) {
+            Event* ev = player.ongoingEvent;
+            if (!ev) {
+                gameState = STATE_NORMAL;
+            }
+            else if (ev->eventIndex >= (int) ev->actions.size()) {
+                gameState = STATE_NORMAL;
+                ev->eventIndex = 0;
+                ev->triggered = true;
+                player.ongoingEvent = nullptr;
+            }
+            else {
+                EventAction& action = ev->actions[ev->eventIndex];
+                if (executeAction(action, player, camera)) ev->eventIndex++;
+            }
+        }
 
         //Draw
         BeginTextureMode(target);
@@ -1005,6 +1367,7 @@ int main(void)
         // Draw topmost layer
         map.drawMap(false);
 
+        // Draw debug info
         if (DEBUG_MODE) {
             DrawRectangleLinesEx(player.body, 1, GREEN);
             for (Rectangle& r : map.debugColliders) DrawRectangleLinesEx(r, 1, RED);
@@ -1018,6 +1381,9 @@ int main(void)
 
             for (NPC& npc : map.npcs)
                 DrawRectangleLinesEx(npc.body, 1, LIME);
+
+            for (EventPoint& ep : map.eventPoints)
+                DrawRectangleLinesEx(ep.trigger, 1, PINK);
         }
 
         // Draw fades
@@ -1033,7 +1399,7 @@ int main(void)
         EndMode2D();
 
         // Draw dialogues
-        if (gameState == DIALOGUE && player.currentDialogue) {
+        if (gameState == STATE_DIALOGUE && player.currentDialogue) {
             const std::string& text = player.currentDialogue->msg[player.dialogueIndex];
 
             if (!player.lineFinished) {
@@ -1050,12 +1416,12 @@ int main(void)
             }
         }
         
-        if (gameState == DIALOGUE) {
-            Rectangle outer = { 40, GAME_HEIGHT - 180, GAME_WIDTH - 80, 140 };
-            Rectangle inner = { 46, GAME_HEIGHT - 174, GAME_WIDTH - 92, 128 };
+        if (gameState == STATE_DIALOGUE) {
+            Rectangle outer = { 300, GAME_HEIGHT - 180, GAME_WIDTH - 600, 140 };
+            Rectangle inner = { 306, GAME_HEIGHT - 174, GAME_WIDTH - 612, 128 };
 
-            DrawRectangleRec(outer, Fade(BLACK, 0.9f));
-            DrawRectangleRec(inner, Fade(DARKGRAY, 0.85f));
+            DrawRectangleRec(outer, Fade(BLACK, 0.7f));
+            DrawRectangleRec(inner, Fade(DARKGRAY, 0.65f));
 
             Dialogue* d = player.currentDialogue;
             int i = player.dialogueIndex;
