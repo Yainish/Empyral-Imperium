@@ -3,34 +3,21 @@
     [
         {
             "name" : "event_1",
-            "actions" : [
-                {
-                    "type" : "ACTION_MOVE_PLAYER",
-                    "direction" : "RIGHT",
-                    "tiles" : 1
-                },
-                {
-                    "type" : "ACTION_GROUP",
-                    "actions" : [
-                        {
-                            "type" : "ACTION_MOVE_NPC",
-                            "direction" : "RIGHT",
-                            "tiles" : 5,
-                            "npc": "character-spritesheet"
-                        },
-                        {
-                            "type" : "ACTION_MOVE_NPC",
-                            "direction" : "DOWN",
-                            "tiles" : 0,
-                            "npc": "character-spritesheet"
-                        },
-                        {
-                            "type" : "ACTION_MOVE_PLAYER",
-                            "direction" : "DOWN",
-                            "tiles" : 5
-                        }
+            "actions" : 
+            [
+                { "type" : "ACTION_GROUP", "actions" : 
+                    [
+                        { "type" : "ACTION_MOVE_PLAYER", "direction" : "LEFT", "tiles" : 5, "follow" : true },
+                        { "type" : "ACTION_MOVE_CAMERA", "direction" : "LEFT", "tiles" : 5, "speed" : 150 }
                     ]
-                }
+                },
+                { "type" : "ACTION_GROUP", "actions" : [
+                        { "type" : "ACTION_MOVE_NPC", "direction" : "RIGHT", "tiles" : 5, "npc": "character-spritesheet", "follow" : false },
+                        { "type" : "ACTION_MOVE_PLAYER", "direction" : "DOWN", "tiles" : 5, "follow" : false }
+                    ]
+                },
+                { "type" : "ACTION_MOVE_NPC", "direction" : "LEFT", "tiles" : 10, "npc": "character-spritesheet", "follow" : true },
+                { "type" : "ACTION_MOVE_NPC", "direction" : "DOWN", "tiles" : 0, "npc": "character-spritesheet", "follow" : true }
             ]
         }
     ]

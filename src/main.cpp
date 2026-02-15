@@ -74,6 +74,7 @@ struct EventAction {
     NPC* npc;        // Only in ACTION_MOVE_NPC
     int tiles;
     int direction;
+    bool follow;     // Only in ACTION_MOVE_NPC and ACTION_MOVE_PLAYER ---- Camera follow
 
     // Dialogues
     std::string dialogue;   // Only in ACTION_DIALOGUE
@@ -81,6 +82,9 @@ struct EventAction {
     // Groups
     std::vector<EventAction> subactions; // Only in ACTION_GROUP
     bool finished = false;               // Only in ACTION_GROUP
+
+    // Camera
+    float speed;                         // Only in ACTION_MOVE_CAMERA
 };
 
 struct Event {
@@ -730,9 +734,14 @@ struct Map {
                 if (n.name == str_npc)
                     npc = &n;
             action.npc = npc;
+            action.follow = a["follow"].get<bool>();
         }
+        if (type == ACTION_MOVE_PLAYER)
+            action.follow = a["follow"].get<bool>();
         if (type == ACTION_DIALOGUE)
             action.dialogue = a["dialogue"].get<std::string>();
+        if (type == ACTION_MOVE_CAMERA)
+            action.speed = a["speed"].get<float>();
         if (type == ACTION_GROUP)
             for (json sub : a["actions"])
                 action.subactions.push_back(parseAction(sub));
@@ -911,7 +920,7 @@ Camera2D setupCamera(Player &player) {
 
 void initialize() {
     //Game Window
-    InitWindow(0, 0, "Top Down");
+    InitWindow(0, 0, "Empyral Imperium");
     ToggleBorderlessWindowed();
     ClearWindowState(FLAG_WINDOW_TOPMOST);
     SetTargetFPS(60);
@@ -950,7 +959,7 @@ void input(Player &player, Map &map) {
         return;
     }
 
-    if (IsKeyPressed(KEY_Z)) {
+    if ((gameState == STATE_NORMAL) && IsKeyPressed(KEY_Z)) {
         // Object dialogues - could be rewritten to use interaction zone, not really used
         for (DialoguePoint &dp : map.dialoguePoints) {
             if (CheckCollisionRecs(player.body, dp.trigger)) {
@@ -1076,8 +1085,45 @@ bool executeAction(EventAction& action, Player& player, Camera2D& camera) {
             return true;
             break;
         }
+        // case action pause + rewrite player/npc functions
         case ACTION_MOVE_CAMERA: {
-            return true;
+            if (!action.started) {
+                action.started = true;
+                player.frame = 0;
+                switch (action.direction) {
+                    case RIGHT:
+                        action.target = camera.target.x + action.tiles * tileSize;
+                        break;
+                    case LEFT:
+                        action.target = camera.target.x - action.tiles * tileSize;
+                        break;
+                    case DOWN:
+                        action.target = camera.target.y + action.tiles * tileSize;
+                        break;
+                    case UP:
+                        action.target = camera.target.y - action.tiles * tileSize;
+                        break;
+                }
+            }
+
+            switch (action.direction) {
+                case RIGHT:
+                    camera.target.x = round(std::min(camera.target.x + action.speed * GetFrameTime(), action.target));
+                    if (camera.target.x == action.target) return true;
+                    break;
+                case LEFT:
+                    camera.target.x = round(std::max(camera.target.x - action.speed * GetFrameTime(), action.target));
+                    if (camera.target.x == action.target) return true;
+                    break;
+                case DOWN:
+                    camera.target.y = round(std::min(camera.target.y + action.speed * GetFrameTime(), action.target));
+                    if (camera.target.y == action.target) return true;
+                    break;
+                case UP:
+                    camera.target.y = round(std::max(camera.target.y - action.speed * GetFrameTime(), action.target));
+                    if (camera.target.y == action.target) return true;
+                    break;
+            }
             break;
         }
         case ACTION_MOVE_NPC: {
@@ -1128,6 +1174,8 @@ bool executeAction(EventAction& action, Player& player, Camera2D& camera) {
                         npc->y -= npc->speed * GetFrameTime();
                         break;
                 }
+                if (action.follow)
+                    camera.target = { floor(npc->x + tileSize/2.0f), floor(npc->y + tileSize/2.0f) };
 
                 npc->updateBody();
                 npc->updateFrame(GetFrameTime());
@@ -1156,6 +1204,8 @@ bool executeAction(EventAction& action, Player& player, Camera2D& camera) {
                         action.target = player.y - action.tiles * tileSize;
                         break;
                 }
+                player.speed = 150.0f;
+                player.frameMaxTimer = 0.10f;
             }
             
             float distance = 0.0f;
@@ -1186,8 +1236,8 @@ bool executeAction(EventAction& action, Player& player, Camera2D& camera) {
                         break;
                 }
 
-                // Could define a PLAYER_MOVEMENT_NOFOLLOW or something similar if needed
-                camera.target = { floor(player.x + tileSize/2.0f), floor(player.y + tileSize/2.0f) };
+                if (action.follow)
+                    camera.target = { floor(player.x + tileSize/2.0f), floor(player.y + tileSize/2.0f) };
 
                 player.updatePlayerBody();
                 player.updatePlayerFrame(GetFrameTime());
@@ -1234,6 +1284,10 @@ int main(void)
 
     Drawable playerDraw;
     playerDraw.texture = &player.texture;
+
+    Image textboxImage = LoadImage((RESOURCE_PATH + "textbox.png").c_str());
+    Texture2D textboxTexture = LoadTextureFromImage(textboxImage);
+    UnloadImage(textboxImage);
 
     while (!WindowShouldClose())
     {
@@ -1420,8 +1474,13 @@ int main(void)
             Rectangle outer = { 300, GAME_HEIGHT - 180, GAME_WIDTH - 600, 140 };
             Rectangle inner = { 306, GAME_HEIGHT - 174, GAME_WIDTH - 612, 128 };
 
-            DrawRectangleRec(outer, Fade(BLACK, 0.7f));
-            DrawRectangleRec(inner, Fade(DARKGRAY, 0.65f));
+            // Black box (would also require updating text color)
+            /*DrawRectangleRec(outer, Fade(BLACK, 0.7f));
+            DrawRectangleRec(inner, Fade(DARKGRAY, 0.65f));*/
+
+            // Texture box
+            Rectangle src = {0, 0, (float)textboxTexture.width, (float)textboxTexture.height};
+            DrawTexturePro(textboxTexture, src, outer, {0,0}, 0, Color {255, 255, 255, 255});
 
             Dialogue* d = player.currentDialogue;
             int i = player.dialogueIndex;
@@ -1435,15 +1494,15 @@ int main(void)
                 inner.x + 10,
                 inner.y + 8,
                 20,
-                RAYWHITE
+                Color {255, 255, 255, 255}
             );
 
             DrawText(
                 visibleText.c_str(),
                 inner.x + 10,
-                inner.y + 36,
+                inner.y + 46,
                 20,
-                RAYWHITE
+                Color {62, 31, 29, 255}
             );
 
             if (player.lineFinished) {
@@ -1452,7 +1511,7 @@ int main(void)
                     inner.x + inner.width - 20,
                     inner.y + inner.height - 20,
                     16,
-                    RAYWHITE
+                    Color {62, 31, 29, 255}
                 );
             }
         }
